@@ -2,17 +2,16 @@ import React, { useEffect, useState } from "react";
 import {
   View,
   StyleSheet,
-  Button,
   Text,
   PermissionsAndroid,
-  TouchableOpacity
+  TouchableOpacity,
 } from 'react-native'
 import ReactNativeForegroundService from "@supersami/rn-foreground-service";
 import { tokenMapBox } from "../../token";
 import MapboxGL from '@react-native-mapbox-gl/maps';
-import turf from 'turf'
 import moment from "moment";
-import { Icon } from "react-native-elements";
+import RNLocation from 'react-native-location';
+import RNAndroidLocationEnabler from 'react-native-android-location-enabler';
 
 MapboxGL.setAccessToken(tokenMapBox);
 
@@ -35,7 +34,7 @@ export default function Map({navigation}) {
     const [ statusButton, setStatusButton ] = useState(false)
 
   const onStart = () => {
-    ReactNativeForegroundService.add_task(() => saveRoute(), {
+    ReactNativeForegroundService.add_task(saveRoute, {
     delay: 1000,
     onLoop: true,
     taskId: "taskid",
@@ -59,6 +58,7 @@ export default function Map({navigation}) {
   };
 
   function saveRoute() {
+    console.log(oldUserLocation, userLocation)
     if(oldUserLocation[0] != userLocation[0] || oldUserLocation[1] != userLocation[1]){
         console.log('andou')
         track.features.push({
@@ -84,14 +84,119 @@ export default function Map({navigation}) {
                  PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
             )
             if(granted === PermissionsAndroid.RESULTS.GRANTED){
+                console.log('garanted permission 1')
             }else{
+                console.log('negaded permission 1')
+            }
+
+            const coarse = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION
+            )
+            if (coarse === PermissionsAndroid.RESULTS.GRANTED) {
+                console.log('granted permission 3')
+            }else {
+                console.log('negaded permission 3')
+            }
+
+            const backgroundgranted = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION
+            )
+            console.log(backgroundgranted)
+            if (backgroundgranted === PermissionsAndroid.RESULTS.GRANTED) {
+                console.log('granted permission 2')
+            }else {
+                console.log('negaded permission 2')
             }
         }catch(e){
             console.log('error ' + e)
         }
+        checkGPSstatus()
     }
 
-    useEffect(() => {permission()})
+    async function checkGPSstatus() {
+        await RNAndroidLocationEnabler.promptForEnableLocationIfNeeded({
+             interval: 1000,
+             fastInterval: 500,
+           })
+             .then((data) => {
+               // The user has accepted to enable the location services
+               // data can be :
+               //  - "already-enabled" if the location services has been already enabled
+               //  - "enabled" if user has clicked on OK button in the popup
+               console.log(data)
+             })
+             .catch((err) => {
+               // The user has not accepted to enable the location services or something went wrong during the process
+               // "err" : { "code" : "ERR00|ERR01|ERR02|ERR03", "message" : "message"}
+               // codes :
+               //  - ERR00 : The user has clicked on Cancel button in the popup
+               //  - ERR01 : If the Settings change are unavailable
+               //  - ERR02 : If the popup has failed to open
+               //  - ERR03 : Internal error
+               console.log(err)
+             });
+    }
+
+    useEffect(() => {
+        permission()
+
+        RNLocation.configure({
+            distanceFilter: 50, // Meters
+            desiredAccuracy: {
+              ios: 'best',
+              android: 'highAccuracy',
+            },
+            // Android only
+            androidProvider: 'auto',
+            interval: 1000, // Milliseconds
+            fastestInterval: 5000, // Milliseconds
+            maxWaitTime: 1000, // Milliseconds
+            // iOS Only
+            activityType: 'other',
+            allowsBackgroundLocationUpdates: false,
+            headingFilter: 1, // Degrees
+            headingOrientation: 'portrait',
+            pausesLocationUpdatesAutomatically: false,
+            showsBackgroundLocationIndicator: false,
+          });
+          let locationSubscription = null;
+          let locationTimeout = null;
+          
+          ReactNativeForegroundService.add_task(
+            () => {
+              RNLocation.requestPermission({
+                ios: 'whenInUse',
+                android: {
+                  detail: 'fine',
+                },
+              }).then((granted) => {
+                //console.log('Location Permissions: ', granted);
+                // if has permissions try to obtain location with RN location
+                if (granted) {
+                  locationSubscription && locationSubscription();
+                  locationSubscription = RNLocation.subscribeToLocationUpdates(
+                    ([locations]) => {
+                      locationSubscription();
+                      locationTimeout && clearTimeout(locationTimeout);
+                      console.log('5', [locations.longitude,locations.latitude]);
+                      setUserLocation([locations.longitude,locations.latitude])
+                    },
+                  );
+                } else {
+                  locationSubscription && locationSubscription();
+                  locationTimeout && clearTimeout(locationTimeout);
+                  console.log('no permissions to obtain location');
+                }
+              });
+            },
+            {
+              delay: 1000,
+              onLoop: true,
+              taskId: 'taskid',
+              onError: (e) => console.log('Error logging:', e),
+            },
+          );
+    },[])
 
     useEffect(() => {
         saveRoute()
