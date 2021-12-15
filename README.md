@@ -11,7 +11,9 @@ in code files:
    inside tag manifest:
 
         <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-        <uses-permission android:name="android.permission.WAKE_LOCK" />
+        <uses-permission android:name="android.permission.WAKE_LOCK" />    
+        <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />  
+        <uses-feature android:name="android.hardware.location.gps"/>
         
 
    inside tag application: 
@@ -104,7 +106,9 @@ inside you want to run backgroundTask:
 
    import lib: 
         
-        import ReactNativeForegroundService from "@supersami/rn-foreground-service";        
+        import ReactNativeForegroundService from "@supersami/rn-foreground-service";
+        import RNLocation from 'react-native-location';
+        import RNAndroidLocationEnabler from 'react-native-android-location-enabler';
 
    to facility, created two functions, for start end stop your background task:
 
@@ -130,6 +134,107 @@ inside you want to run backgroundTask:
             // Stoping Foreground service.
             return ReactNativeForegroundService.stop();
         };
+        
+Using the useEffect hook:
+    
+
+    useEffect(() => {
+        permission() // methods for garanted yours permissions
+
+        RNLocation.configure({
+            distanceFilter: 50, // Meters
+            desiredAccuracy: {
+              ios: 'best',
+              android: 'highAccuracy',
+            },
+            // Android only
+            androidProvider: 'auto',
+            interval: 1000, // Milliseconds
+            fastestInterval: 5000, // Milliseconds
+            maxWaitTime: 1000, // Milliseconds
+            // iOS Only
+            activityType: 'other',
+            allowsBackgroundLocationUpdates: false,
+            headingFilter: 1, // Degrees
+            headingOrientation: 'portrait',
+            pausesLocationUpdatesAutomatically: false,
+            showsBackgroundLocationIndicator: false,
+          });
+          let locationSubscription = null;
+          let locationTimeout = null;
+          
+          ReactNativeForegroundService.add_task(
+            () => {
+              RNLocation.requestPermission({
+                ios: 'whenInUse',
+                android: {
+                  detail: 'fine',
+                },
+              }).then((granted) => {
+                //console.log('Location Permissions: ', granted);
+                // if has permissions try to obtain location with RN location
+                if (granted) {
+                  locationSubscription && locationSubscription();
+                  locationSubscription = RNLocation.subscribeToLocationUpdates(
+                    ([locations]) => {
+                      locationSubscription();
+                      locationTimeout && clearTimeout(locationTimeout);
+                      console.log('5', [locations.longitude,locations.latitude]);
+                      setUserLocation([locations.longitude,locations.latitude])
+                    },
+                  );
+                } else {
+                  locationSubscription && locationSubscription();
+                  locationTimeout && clearTimeout(locationTimeout);
+                  console.log('no permissions to obtain location');
+                }
+              });
+            },
+            {
+              delay: 1000,
+              onLoop: true,
+              taskId: 'taskid',
+              onError: (e) => console.log('Error logging:', e),
+            },
+          );
+    },[])
+    
+   
+Required permissions (don't forget to import Permissions to react-native lib):
+    
+    async function permission(){
+        try{
+            const granted = await PermissionsAndroid.request(
+                 PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+            )
+            if(granted === PermissionsAndroid.RESULTS.GRANTED){
+                console.log('Garanted permission ACCESS_FINE_LOCATION')
+            }else{
+                console.log('Negaded permission ACCESS_FINE_LOCATION')
+            }
+
+            const coarse = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION
+            )
+            if (coarse === PermissionsAndroid.RESULTS.GRANTED) {
+                console.log('Garanted permission ACCESS_COARSE_LOCATION')
+            }else {
+                console.log('Negaded permission ACCESS_COARSE_LOCATION')
+            }
+
+            const backgroundgranted = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION
+            )
+            console.log(backgroundgranted)
+            if (backgroundgranted === PermissionsAndroid.RESULTS.GRANTED) {
+                console.log('Granted permission ACCESS_BACKGROUND_LOCATION')
+            }else {
+                console.log('Negaded permission ACCESS_BACKGROUND_LOCATION')
+            }
+        }catch(e){
+            console.log('error ' + e)
+        }
+    }
 
 
 
